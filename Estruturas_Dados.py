@@ -133,7 +133,11 @@ def colorir_caminho(labirinto):
             caminho_colorido.append(char)
     return "<span style='font-family:monospace;'>" + "".join(caminho_colorido) + "</span>"
 
-st.markdown("""<style>.stTextArea textarea {font-family: monospace;}</style>""",unsafe_allow_html=True,)
+with st.form("calc_form"):
+    st.markdown("""<style>.stTextArea textarea {font-family: monospace;}</style>""",unsafe_allow_html=True,)
 
-labirinto = st.text_area("Mapa", placeholder="#####\n#...#\n#...#\n#...#\n#####")
-st.html(colorir_caminho(encontrar_caminho(labirinto)))
+    labirinto = st.text_area("Mapa", placeholder="#####\n#...#\n#...#\n#...#\n#####")
+
+    calcular = st.form_submit_button("Calcular")
+    if calcular:
+        st.html(colorir_caminho(encontrar_caminho(labirinto)))
