@@ -4,7 +4,7 @@ import uuid
 import os
 
 # Define the local database file path
-CSV_FILE = "tasks.csv"
+CSV_FILE = "spents.csv"
 
 USER_CREDENTIALS = {
     "": "",
@@ -13,22 +13,22 @@ USER_CREDENTIALS = {
 }
 
 # --- PERSISTENCE FUNCTIONS ---
-def load_tasks():
-    """Loads tasks from CSV or returns an empty DataFrame if the file doesn't exist."""
+def load_spents():
+    """Loads spents from CSV or returns an empty DataFrame if the file doesn't exist."""
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
             # Ensure proper data types
             df["id"] = df["id"].astype(str)
-            df["Check"] = df["Check"].astype(bool)
+            df["Descrição"] = df["Descrição"].fillna("").astype(str)
             return df
         except Exception:
             # Fallback in case of a corrupted CSV file
-            return pd.DataFrame(columns=["id", "Descrição", "Prioridade", "Check"])
-    return pd.DataFrame(columns=["id", "Descrição", "Prioridade", "Check"])
+            return pd.DataFrame(columns=["id", "Descrição", "Valor", "Data", "Categoria"])
+    return pd.DataFrame(columns=["id", "Descrição", "Valor", "Data", "Categoria"])
 
-def save_tasks(df):
-    """Saves the current tasks DataFrame to the local CSV file."""
+def save_spents(df):
+    """Saves the current spents DataFrame to the local CSV file."""
     df.to_csv(CSV_FILE, index=False)
 
 
@@ -37,21 +37,14 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
     st.session_state.username = ""
-if "tasks" not in st.session_state:
+if "spents" not in st.session_state:
     # Load from local file instead of starting empty
-    st.session_state.tasks = load_tasks()
+    st.session_state.spents = load_spents()
 
-PRIORITY_WEIGHTS = {"🔴 Alta": 0, "🟡 Média": 1, "🟢 Baixa": 2}
-
-def aplicar_riscado_unicode(texto):
-    texto_limpo = str(texto).replace("\u0336", "")
-    return "".join([ch + "\u0336" for ch in texto_limpo])
-
-def remover_riscado_unicode(texto):
-    return str(texto).replace("\u0336", "")
+CATEGORIAS = ["Mercado", "Luz", "Internet", "Água", "Lazer","Outros"]
 
 def show_login_page():
-    st.title("Tarefas")
+    st.title("Gastos")
     st.subheader("Faça login no sistema.")
     
     with st.form("login_form"):
@@ -70,83 +63,92 @@ def show_login_page():
 
 def show_main_app():
     st.title(f"Bem vindo, {st.session_state.username}!")
-    st.write("Aqui está sua lista de tarefas:")
+    st.write("Aqui está sua lista de gastos:")
 
-    st.subheader("➕ Criar Tarefa")
-    with st.form("task_form", clear_on_submit=True):
-        task_msg = st.text_input("Descrição", placeholder="O que precisa ser feito?")
-        task_priority = st.selectbox("Prioridade", options=list(PRIORITY_WEIGHTS.keys()))
+    st.subheader("➕ Criar Gasto")
+    with st.form("spent_form", clear_on_submit=True):
+        description = st.text_input("Descrição", placeholder="Com o que foi gasto?", value="")
+        date = st.date_input("Data", "today")
+        value = st.number_input("Valor", min_value=0.0, placeholder="Quanto foi gasto?", step=1.0)
+        category = st.selectbox("Categoria", options=CATEGORIAS)
         add_button = st.form_submit_button("Adicionar")
         
         if add_button:
-            if task_msg.strip() == "":
-                st.warning("Descrição não pode estar vazia!")
+            if value == 0:
+                st.warning("Gasto deve ser maior que zero")
             else:
-                new_task = {
+                new_spent = {
                     "id": str(uuid.uuid4()),
-                    "Descrição": task_msg,
-                    "Prioridade": task_priority,
-                    "Check": False
+                    "Descrição": description,
+                    "Data": date,
+                    "Valor": value,
+                    "Categoria": category 
                 }
-                row_df = pd.DataFrame([new_task])
+                row_df = pd.DataFrame([new_spent])
                 
                 updated_df = pdAppend(row_df)
-                save_tasks(updated_df)
+                save_spents(updated_df)
                 
-                st.success("Adicionada com sucesso!")
+                st.success("Adicionado com sucesso!")
                 st.rerun()
 
-    st.subheader("Sua lista de tarefas")
+    st.subheader("Sua lista de gastos")
     
-    if st.session_state.tasks.empty:
-        st.info("Nenhuma tarefa ainda. Adicione algumas...")
+    if st.session_state.spents.empty:
+        st.info("Nenhum gasto cadastrado ainda. Adicione alguns...")
     else:
-        df_completo = st.session_state.tasks.copy()
+        col1, col2 = st.columns(2)
+        coluna_sort = col1.selectbox("Ordenar por", ["Data", "Valor", "Descrição", "Categoria"])
+        ordem = col2.radio("Ordem", ["Crescente", "Decrescente"], horizontal=True)
+
+        df_completo = st.session_state.spents.copy().sort_values(
+            by=coluna_sort, ascending=(ordem == "Crescente")
+        ).reset_index(drop=True)
         
-        df_completo['priority_peso'] = df_completo['Prioridade'].map(PRIORITY_WEIGHTS)
-        df_completo['check_peso'] = df_completo['Check'].map({False: 0, True: 1})
+        # df_completo['priority_peso'] = df_completo['Prioridade'].map(PRIORITY_WEIGHTS)
+        # df_completo['check_peso'] = df_completo['Check'].map({False: 0, True: 1})
         
-        df_sorted = (
-            df_completo.sort_values(by=["check_peso", "priority_peso"], ascending=[True, True])
-            .drop(columns=['priority_peso', 'check_peso'])
-            .reset_index(drop=True)
-        )
+        # df_sorted = (
+        #     df_completo.sort_values(by=["check_peso", "priority_peso"], ascending=[True, True])
+        #     .drop(columns=['priority_peso', 'check_peso'])
+        #     .reset_index(drop=True)
+        # )
         
         if "editor_version" not in st.session_state:
             st.session_state.editor_version = 0
 
-        editor_key = f"editor_tarefas_{st.session_state.editor_version}"
+        editor_key = f"editor_gastos_{st.session_state.editor_version}"
 
         edited_df = st.data_editor(
-            df_sorted, 
-            use_container_width=True, 
+            df_completo, 
+            width='stretch', 
             hide_index=True, 
             num_rows="dynamic",
             key=editor_key,
             column_config={
                 "id": None,
-                "Prioridade": st.column_config.SelectboxColumn(
-                    "Prioridade",
-                    options=list(PRIORITY_WEIGHTS.keys()),
+                "Categoria": st.column_config.SelectboxColumn(
+                    "Categoria",
+                    options=CATEGORIAS,
                     required=True,
                 ),
-                "Check": st.column_config.CheckboxColumn(
-                    "Check",
-                    help="Marque para concluir a tarefa",
-                    default=False,
-                )
+                # "Check": st.column_config.CheckboxColumn(
+                #     "Check",
+                #     help="Marque para concluir a tarefa",
+                #     default=False,
+                # )
             }
         )
 
         if editor_key in st.session_state:
             mudancas = st.session_state[editor_key]
             houve_mudanca = False
-            master_df = st.session_state.tasks.copy()
+            master_df = st.session_state.spents.copy()
             
             # 1. Handle deleted rows
             if mudancas["deleted_rows"]:
                 indices_para_deletar = [int(idx) for idx in mudancas["deleted_rows"]]
-                ids_para_deletar = df_sorted.iloc[indices_para_deletar]["id"].tolist()
+                ids_para_deletar = df_completo.iloc[indices_para_deletar]["id"].tolist()
                 master_df = master_df[~master_df["id"].isin(ids_para_deletar)]
                 houve_mudanca = True
 
@@ -154,31 +156,25 @@ def show_main_app():
             if mudancas["edited_rows"]:
                 for idx_str, alteracoes in mudancas["edited_rows"].items():
                     idx = int(idx_str)
-                    if idx >= len(df_sorted):
+                    if idx >= len(df_completo):
                         continue
                         
-                    task_id = df_sorted.at[idx, "id"]
+                    task_id = df_completo.at[idx, "id"]
                     matching_indices = master_df[master_df["id"] == task_id].index
                     
                     if len(matching_indices) == 0:
                         continue
-                    master_idx = matching_indices
+                    master_idx = matching_indices[0]
                     
                     for coluna, valor in alteracoes.items():
                         master_df.at[master_idx, coluna] = valor
-                        
-                        if coluna == "Check":
-                            texto_original = master_df.at[master_idx, "Descrição"].item()
-                            if valor is True:
-                                master_df.at[master_idx, "Descrição"] = aplicar_riscado_unicode(texto_original)
-                            else:
-                                master_df.at[master_idx, "Descrição"] = remover_riscado_unicode(texto_original)
                 houve_mudanca = True
             
             # Save state changes locally
             if houve_mudanca:
-                st.session_state.tasks = master_df
-                save_tasks(master_df)
+                master_df["Descrição"] = master_df["Descrição"].fillna("")
+                st.session_state.spents = master_df
+                save_spents(master_df)
                 st.session_state.editor_version += 1
                 st.rerun()
     if st.button("Log Out"):
@@ -188,8 +184,8 @@ def show_main_app():
         st.rerun()
 
 def pdAppend(row_df):
-    updated_df = pd.concat([st.session_state.tasks, row_df], ignore_index=True)
-    st.session_state.tasks = updated_df
+    updated_df = pd.concat([st.session_state.spents, row_df], ignore_index=True)
+    st.session_state.spents = updated_df
     return updated_df
 
 
