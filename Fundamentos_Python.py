@@ -4,7 +4,7 @@ import uuid
 import os
 
 # Define the local database file path
-CSV_FILE = "spents.csv"
+CSV_FILE = "financas.csv"
 
 USER_CREDENTIALS = {
     "": "",
@@ -24,11 +24,20 @@ def load_spents():
             return df
         except Exception:
             # Fallback in case of a corrupted CSV file
-            return pd.DataFrame(columns=["id", "Descrição", "Valor", "Data", "Categoria"])
-    return pd.DataFrame(columns=["id", "Descrição", "Valor", "Data", "Categoria"])
+            return pd.DataFrame(columns=["id", "Tipo", "Descrição", "Valor", "Data", "Categoria"])
+    return pd.DataFrame(columns=["id", "Tipo", "Descrição", "Valor", "Data", "Categoria"])
+
+def calcula_totais():
+    df = st.session_state.spents
+    totais = df.groupby('Tipo')['Valor'].sum()
+    st.session_state.total_creditos = 0
+    st.session_state.total_debitos = 0
+    st.session_state.total_creditos = float(totais.get('Crédito', 0))
+    st.session_state.total_debitos = float(totais.get('Débito', 0))
+    st.session_state.total_geral = st.session_state.total_creditos + st.session_state.total_debitos
 
 def save_spents(df):
-    """Saves the current spents DataFrame to the local CSV file."""
+    calcula_totais()
     df.to_csv(CSV_FILE, index=False)
 
 
@@ -40,8 +49,14 @@ if "username" not in st.session_state:
 if "spents" not in st.session_state:
     # Load from local file instead of starting empty
     st.session_state.spents = load_spents()
+    calcula_totais()
 
-CATEGORIAS = ["Mercado", "Luz", "Internet", "Água", "Lazer","Outros"]
+CATEGORIASMAP = {
+    "Débito": ["Mercado", "Luz", "Internet", "Água", "Lazer","Outros"],
+    "Crédito": ["Salário", "Venda", "Serviço Prestado"]
+}
+
+CATEGORIAS = ["Mercado", "Luz", "Internet", "Água", "Lazer","Outros", "Salário", "Venda", "Serviço Prestado"]
 
 def show_login_page():
     st.title("Gastos")
@@ -63,25 +78,35 @@ def show_login_page():
 
 def show_main_app():
     st.title(f"Bem vindo, {st.session_state.username}!")
-    st.write("Aqui está sua lista de gastos:")
 
-    st.subheader("➕ Criar Gasto")
+    if st.session_state.total_geral < 0:
+        st.badge(f"Total geral: {st.session_state.total_geral*-1}", icon=":material/remove:", color="red")
+    else:
+        st.badge(f"Total geral: {st.session_state.total_geral}", icon=":material/add:", color="green")
+
+    st.subheader("➕ Criar Débito/Crédito")
+    tipo = st.selectbox("Tipo",options=list(CATEGORIASMAP.keys()))
     with st.form("spent_form", clear_on_submit=True):
-        description = st.text_input("Descrição", placeholder="Com o que foi gasto?", value="")
+        description = st.text_input("Descrição", placeholder="Descrição da movimentação", value="")
         date = st.date_input("Data", "today")
         value = st.number_input("Valor", min_value=0.0, placeholder="Quanto foi gasto?", step=1.0)
-        category = st.selectbox("Categoria", options=CATEGORIAS)
+        if tipo == "Crédito":
+            category = st.selectbox("Categoria", options=CATEGORIASMAP[tipo])
+        else:
+            category = st.selectbox("Categoria", options=CATEGORIASMAP[tipo])
         add_button = st.form_submit_button("Adicionar")
         
         if add_button:
             if value == 0:
                 st.warning("Gasto deve ser maior que zero")
             else:
+                sinal = 1 if tipo=='Crédito' else -1
                 new_spent = {
                     "id": str(uuid.uuid4()),
+                    "Tipo": tipo,
                     "Descrição": description,
                     "Data": date,
-                    "Valor": value,
+                    "Valor": value * sinal,
                     "Categoria": category 
                 }
                 row_df = pd.DataFrame([new_spent])
@@ -98,21 +123,14 @@ def show_main_app():
         st.info("Nenhum gasto cadastrado ainda. Adicione alguns...")
     else:
         col1, col2 = st.columns(2)
-        coluna_sort = col1.selectbox("Ordenar por", ["Data", "Valor", "Descrição", "Categoria"])
+        coluna_sort = col1.selectbox("Ordenar por", ["Tipo", "Data", "Valor", "Descrição", "Categoria"])
         ordem = col2.radio("Ordem", ["Crescente", "Decrescente"], horizontal=True)
 
+        if coluna_sort == 'Data':
+            st.session_state.spents[coluna_sort] = pd.to_datetime(st.session_state.spents[coluna_sort], errors='coerce').dt.date
         df_completo = st.session_state.spents.copy().sort_values(
             by=coluna_sort, ascending=(ordem == "Crescente")
         ).reset_index(drop=True)
-        
-        # df_completo['priority_peso'] = df_completo['Prioridade'].map(PRIORITY_WEIGHTS)
-        # df_completo['check_peso'] = df_completo['Check'].map({False: 0, True: 1})
-        
-        # df_sorted = (
-        #     df_completo.sort_values(by=["check_peso", "priority_peso"], ascending=[True, True])
-        #     .drop(columns=['priority_peso', 'check_peso'])
-        #     .reset_index(drop=True)
-        # )
         
         if "editor_version" not in st.session_state:
             st.session_state.editor_version = 0
@@ -132,13 +150,15 @@ def show_main_app():
                     options=CATEGORIAS,
                     required=True,
                 ),
-                # "Check": st.column_config.CheckboxColumn(
-                #     "Check",
-                #     help="Marque para concluir a tarefa",
-                #     default=False,
-                # )
             }
         )
+
+        st.markdown(f'Total de Créditos: :green-background[{st.session_state.total_creditos}]', text_alignment="right")
+        st.markdown(f'Total de Débitos: :red-background[{st.session_state.total_debitos}]', text_alignment="right")
+        if st.session_state.total_geral < 0:
+            st.markdown(f'Total geral: :red-background[{st.session_state.total_geral}]', text_alignment="right")
+        else:
+            st.markdown(f'Total geral: :green-background[{st.session_state.total_geral}]', text_alignment="right")
 
         if editor_key in st.session_state:
             mudancas = st.session_state[editor_key]
