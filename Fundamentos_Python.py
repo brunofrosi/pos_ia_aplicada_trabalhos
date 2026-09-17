@@ -1,3 +1,6 @@
+#Trabalho Disciplina Fundamentos em Python
+#Componentes: Bruno Frosi e Weligton Weiss
+
 import streamlit as st
 import pandas as pd
 import uuid
@@ -30,8 +33,6 @@ def load_spents():
 def calcula_totais():
     df = st.session_state.spents
     totais = df.groupby('Tipo')['Valor'].sum()
-    st.session_state.total_creditos = 0
-    st.session_state.total_debitos = 0
     st.session_state.total_creditos = float(totais.get('Crédito', 0))
     st.session_state.total_debitos = float(totais.get('Débito', 0))
     st.session_state.total_geral = st.session_state.total_creditos + st.session_state.total_debitos
@@ -50,6 +51,49 @@ if "spents" not in st.session_state:
     # Load from local file instead of starting empty
     st.session_state.spents = load_spents()
     calcula_totais()
+
+def edit_registro(df_completo, editor_key):
+    if editor_key in st.session_state:
+        mudancas = st.session_state[editor_key]
+        houve_mudanca = False
+        master_df = st.session_state.spents.copy()
+            
+            # 1. Handle deleted rows
+        if mudancas["deleted_rows"]:
+            indices_para_deletar = [int(idx) for idx in mudancas["deleted_rows"]]
+            ids_para_deletar = df_completo.iloc[indices_para_deletar]["id"].tolist()
+            master_df = master_df[~master_df["id"].isin(ids_para_deletar)]
+            houve_mudanca = True
+
+            # 2. Handle edited rows
+        if mudancas["edited_rows"]:
+            for idx_str, alteracoes in mudancas["edited_rows"].items():
+                idx = int(idx_str)
+                if idx >= len(df_completo):
+                    continue
+                        
+                task_id = df_completo.at[idx, "id"]
+                matching_indices = master_df[master_df["id"] == task_id].index
+                    
+                if len(matching_indices) == 0:
+                    continue
+                master_idx = matching_indices[0]
+                    
+                for coluna, valor in alteracoes.items():
+                    if master_df.iloc[0].get('Tipo') == 'Débito' and valor >= 0:
+                        master_df.at[master_idx, coluna] = valor * -1
+                    else:
+                        master_df.at[master_idx, coluna] = valor
+            houve_mudanca = True
+            
+            # Save state changes locally
+        if houve_mudanca:
+            master_df["Descrição"] = master_df["Descrição"].fillna("")
+            st.session_state.spents = master_df
+            save_spents(master_df)
+            st.session_state.editor_version += 1
+            st.rerun()
+
 
 CATEGORIASMAP = {
     "Débito": ["Mercado", "Luz", "Internet", "Água", "Lazer","Outros"],
@@ -160,43 +204,7 @@ def show_main_app():
         else:
             st.markdown(f'Total geral: :green-background[{st.session_state.total_geral}]', text_alignment="right")
 
-        if editor_key in st.session_state:
-            mudancas = st.session_state[editor_key]
-            houve_mudanca = False
-            master_df = st.session_state.spents.copy()
-            
-            # 1. Handle deleted rows
-            if mudancas["deleted_rows"]:
-                indices_para_deletar = [int(idx) for idx in mudancas["deleted_rows"]]
-                ids_para_deletar = df_completo.iloc[indices_para_deletar]["id"].tolist()
-                master_df = master_df[~master_df["id"].isin(ids_para_deletar)]
-                houve_mudanca = True
-
-            # 2. Handle edited rows
-            if mudancas["edited_rows"]:
-                for idx_str, alteracoes in mudancas["edited_rows"].items():
-                    idx = int(idx_str)
-                    if idx >= len(df_completo):
-                        continue
-                        
-                    task_id = df_completo.at[idx, "id"]
-                    matching_indices = master_df[master_df["id"] == task_id].index
-                    
-                    if len(matching_indices) == 0:
-                        continue
-                    master_idx = matching_indices[0]
-                    
-                    for coluna, valor in alteracoes.items():
-                        master_df.at[master_idx, coluna] = valor
-                houve_mudanca = True
-            
-            # Save state changes locally
-            if houve_mudanca:
-                master_df["Descrição"] = master_df["Descrição"].fillna("")
-                st.session_state.spents = master_df
-                save_spents(master_df)
-                st.session_state.editor_version += 1
-                st.rerun()
+        edit_registro(df_completo, editor_key)
     if st.button("Log Out"):
         st.session_state.logged_in = False
         st.session_state.username = ""
