@@ -1,0 +1,65 @@
+import os
+
+def criar_estrutura_teste():
+    estrutura = [
+        "home/user/documentos",
+        "home/user/imagens",
+        "home/user/musicas",
+        "home/admin/configs",
+    ]
+    for pasta in estrutura:
+        os.makedirs(pasta, exist_ok=True)
+
+    arquivos = {
+        "home/user/documentos/relatorio.pdf": "",
+        "home/user/documentos/tcc.docx": "",
+        "home/user/imagens/foto1.jpg": "",
+        "home/user/imagens/foto2.jpg": "",
+        "home/user/musicas/rock.mp3": "",
+        "home/admin/configs/system.cfg": "",
+    }
+    for caminho, conteudo in arquivos.items():
+        with open(caminho, "w") as f:
+            f.write(conteudo)
+
+criar_estrutura_teste()
+
+import os
+
+def contar_arquivos_recursivo(pasta, extensoes, contagem):
+    for nome in os.listdir(pasta):
+        caminho = os.path.join(pasta, nome)
+        if os.path.isdir(caminho):
+            contar_arquivos_recursivo(caminho, extensoes, contagem)  # chama ela mesma
+        else:
+            ext = os.path.splitext(nome)[1].lower()
+            if ext in extensoes:
+                contagem.setdefault(pasta, []).append(nome)
+
+def sugerir_pasta(diretorio_raiz, tipo_arquivo):
+    tipos = {
+        "imagem": [".jpg", ".jpeg", ".png", ".gif", ".bmp"],
+        "audio": [".mp3", ".wav", ".flac", ".m4a"],
+        "documento": [".pdf", ".docx", ".txt", ".xlsx"],
+    }
+    extensoes = tipos.get(tipo_arquivo.lower())
+    if extensoes is None:
+        print("Tipo de arquivo não reconhecido.")
+        return
+
+    contagem = {}
+    contar_arquivos_recursivo(diretorio_raiz, extensoes, contagem)
+
+    if not contagem:
+        print(f"Nenhum arquivo do tipo '{tipo_arquivo}' encontrado.")
+        return
+
+    melhor_pasta = max(contagem, key=lambda p: len(contagem[p]))
+
+    print(f"Pasta recomendada: {melhor_pasta}")
+    print(f"Arquivos encontrados ({len(contagem[melhor_pasta])}):")
+    for arquivo in contagem[melhor_pasta]:
+        print(f" - {os.path.join(melhor_pasta, arquivo)}")
+
+# Exemplo de uso:
+sugerir_pasta("home", "imagem")
